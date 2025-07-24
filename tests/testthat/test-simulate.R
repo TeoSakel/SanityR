@@ -35,3 +35,36 @@ test_that("simulate_branched_random_walk returns a valid SCE with lineage graph"
     # Check that colData contains neighbor info
     expect_true(all(c("cell_size", "predecessor") %in% colnames(colData(sce))))
 })
+
+test_that("simulate_independent_cells uses provided sizes", {
+    cell_size <- c(100, 200, 300)
+    gene_size <- c(50, 60)
+    sce <- simulate_independent_cells(
+        cell_size=cell_size,
+        gene_size=gene_size,
+        N_cell=3,
+        N_gene=2
+    )
+    expect_equal(colData(sce)$cell_size, cell_size)
+    expect_equal(ncol(sce), 3)
+    expect_equal(nrow(sce), 2)
+})
+
+test_that("simulate_independent_cells works with single cell and gene", {
+    sce <- simulate_independent_cells(N_cell=1, N_gene=1)
+    expect_s4_class(sce, "SingleCellExperiment")
+    expect_equal(dim(counts(sce)), c(1L, 1L))
+})
+
+test_that("simulate_branched_random_walk respects path settings", {
+    sce <- simulate_branched_random_walk(N_path=2, length_path=3, N_gene=4)
+    expect_equal(ncol(sce), 6)
+    expect_equal(nrow(sce), 4)
+    expect_true("predecessor" %in% colnames(colData(sce)))
+})
+
+test_that("simulate_branched_random_walk handles single step", {
+    sce <- simulate_branched_random_walk(N_path=1, length_path=1, N_gene=2)
+    expect_equal(ncol(sce), 1)
+    expect_true(all(colData(sce)$predecessor %in% 0L))
+})

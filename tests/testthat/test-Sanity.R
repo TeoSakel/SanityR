@@ -96,3 +96,43 @@ test_that("Sanity() returns nearly zero cell-specific differences for uniform in
         p.adjust()
     expect_true(min(p) > 0.05)
 })
+
+test_that("Sanity() outputs are numeric and finite", {
+    res <- Sanity(counts(sce))
+    expect_true(is.numeric(res$mu))
+    expect_true(all(is.finite(res$mu)))
+
+    expect_true(is.numeric(res$var_mu))
+    expect_true(all(is.finite(res$var_mu)))
+
+    expect_true(is.numeric(res$var))
+    expect_true(all(is.finite(res$var)))
+
+    expect_true(is.matrix(res$delta))
+    expect_true(is.numeric(res$delta))
+    expect_true(all(is.finite(res$delta)))
+
+    expect_true(is.matrix(res$var_delta))
+    expect_true(is.numeric(res$var_delta))
+    expect_true(all(is.finite(res$var_delta)))
+
+    expect_true(is.matrix(res$likelihood))
+    expect_true(is.numeric(res$likelihood))
+    expect_true(all(is.finite(res$likelihood)))
+})
+
+test_that("Sanity() respects subset.row in SummarizedExperiment", {
+    se <- as(sce, "SummarizedExperiment")
+    out <- Sanity(se, subset.row=1:5)
+    expect_equal(nrow(out), 5)
+})
+
+test_that("Sanity() warns about high entropy genes", {
+    se <- as(sce, "SummarizedExperiment")[1, ]
+    expect_warning(Sanity(se, vmin=1e-4, vmax=1), "entropy")
+})
+
+test_that("Sanity() errors with non-numeric input", {
+    bad <- matrix("a", nrow=2, ncol=2)
+    expect_error(Sanity(bad))
+})
