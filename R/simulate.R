@@ -67,15 +67,14 @@ NULL
         N_gene,
         length_path=NULL
 ) {
-    if (is.null(cell_size)) {
+    if (is.null(cell_size)) {  # default cell_size
         path <- system.file(
             "extdata", "baron_cell_data.txt.gz", package="SanityR"
         )
         DF <- read.table(gzfile(path), header=TRUE, stringsAsFactors=FALSE)
         cell_size <- DF[["libsize"]]
     }
-
-    if (is.null(gene_size)) {
+    if (is.null(gene_size)) {  # default gene_size
         path <- system.file(
             "extdata", "baron_gene_data.txt.gz", package="SanityR"
         )
@@ -83,18 +82,25 @@ NULL
         gene_size <- DF[["sum"]]
     }
 
-    if (!is.null(N_cell) && !is.null(length_path)) {
+    if (!is.null(N_cell) && !is.null(length_path)) { # branched random walk
         N_cell <- N_cell * length_path
     } else if (is.null(N_cell)) {
-        N_cell <- length(cell_size)
-    }
-
+        N_cell <- length(cell_size)  # default N_cell
+    } # TODO: check for weird cases of N_cell = 0 or misspecified
     if (is.null(N_gene)) {
-        N_gene <- length(gene_size)
+        N_gene <- length(gene_size) # default N_gene
     }
 
-    cell_size <- sample(cell_size, N_cell, replace=TRUE)
-    gene_size <- sample(gene_size, N_gene, replace=TRUE)
+    if (length(cell_size) == 1L) { # edge-case of simulating 1 cell
+        cell_size <- rep(cell_size, N_cell)
+    } else {
+        cell_size <- sample(cell_size, N_cell, replace=TRUE)
+    }
+    if (length(gene_size) == 1L) { # edge-case of simulating 1 gene
+        gene_size <- rep(gene_size, N_gene)
+    } else {
+        gene_size <- sample(gene_size, N_gene, replace=TRUE)
+    }
 
     list(
         cell_size=cell_size,
@@ -120,12 +126,16 @@ NULL
     ltq_var <- rexp(N_gene, rate=ltq_var_rate) # var_g
 
     # Step 2: Normalize logFC matrix (delta) to match gene-level variance
-    scaling_factor <- sqrt(ltq_var / apply(delta, 1L, var))
+    if (N_cell > 1L) {
+        scaling_factor <- sqrt(ltq_var / apply(delta, 1L, var))
+    } else {
+        scaling_factor <- rep(0, N_gene)
+    }
     delta <- (delta - rowMeans(delta)) * scaling_factor
 
     # Step 3: Compute transcription rates and simulate counts
     ltq <- ltq_mean + delta - 0.5 * ltq_var  # logNormal mean=exp(mu + var/2)
-    tx_rates <- exp(ltq) %*% diag(cell_size)
+    tx_rates <- exp(ltq) %*% diag(cell_size, nrow=N_cell)
     counts_matrix <- matrix(rpois(N_gene * N_cell, tx_rates), nrow=N_gene)
 
     rownames(delta) <- paste0("Gene_", seq_len(N_gene))

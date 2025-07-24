@@ -93,12 +93,9 @@ test_that("calculateSanityDistance errors with missing gene variance", {
 })
 
 test_that("calculateSanityDistance returns zero for identical cells", {
-    tmp <- sce[,1:2]
-    assay(tmp, "logcounts")[,] <- 0
-    assay(tmp, "logcounts_sd")[,] <- 0
-    rowData(tmp)$sanity_log_activity_mean <- 0
-    rowData(tmp)$sanity_log_activity_mean_sd <- 0
-    rowData(tmp)$sanity_activity_sd <- 0
+    tmp <- sce[,c(1L, 1L)]
+    mu_sd <- "sanity_log_activity_mean_sd"
+    rowData(tmp)[[mu_sd]] <- assay(sce, "logcounts_sd")[, 1L]
     d <- calculateSanityDistance(tmp, snr_cutoff=0, nbin=5L)
     expect_equal(as.numeric(d), rep(0, length(d)))
 })

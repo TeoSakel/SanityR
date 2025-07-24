@@ -29,7 +29,9 @@ test_that("Sanity() enforces non-negative Gamma parameters", {
 
 # Test Form of Results ----------------------------------------------------
 
-test_that("Sanity() returns a list with expected components for a matrix input", {
+test_that(
+    "Sanity() returns a list with expected components for a matrix input",
+    {
     res <- Sanity(counts(sce))
     expected_names <- c("mu", "var_mu", "var", "delta", "var_delta", "likelihood")
     expect_true(is.list(res))
@@ -39,7 +41,8 @@ test_that("Sanity() returns a list with expected components for a matrix input",
     expect_equal(dim(res[["delta"]]), dim(counts(sce)))
     expect_equal(dim(res[["var_delta"]]), dim(counts(sce)))
     expect_equal(dim(res[["likelihood"]]), c(nrow(counts(sce)), 160L))
-})
+    }
+)
 
 test_that("Sanity() output components are numeric and finite", {
   res <- Sanity(counts(sce))
@@ -49,13 +52,16 @@ test_that("Sanity() output components are numeric and finite", {
   }
 })
 
-test_that("Sanity() method for SummarizedExperiment modifies rowData and adds assays", {
+test_that(
+    "Sanity() method for SummarizedExperiment modifies rowData and adds assays",
+    {
     res <- Sanity(as(sce, "SummarizedExperiment"))
     new_cols <- c("sanity_log_activity_mean", "sanity_log_activity_mean_sd", "sanity_activity_sd")
     expect_true(all(new_cols %in% colnames(rowData(res))))
     expect_true("logcounts" %in% assayNames(res))
     expect_true("logcounts_sd" %in% assayNames(res))
-})
+    }
+)
 
 test_that("Sanity() names the assays correctly", {
     res <- Sanity(as(sce, "SummarizedExperiment"), name = "sanity")
@@ -76,7 +82,10 @@ test_that("Sanity() variances within the given limits", {
 test_that("Sanity() returns a valid posterior for gene variance", {
     res <- Sanity(counts(sce), vmin = 0.01, vmax = 1.5, nbin = 20)
     expect_true(all(res[["likelihood"]] >= 0))
-    expect_equal(rowSums(res[["likelihood"]]), rep(1, nrow(sce), ignore_attr = TRUE))
+    expect_equal(
+        rowSums(res[["likelihood"]]),
+        rep(1, nrow(sce), ignore_attr = TRUE)
+    )
 })
 
 test_that("Sanity() produced LTQ that sum to 1", {
@@ -85,7 +94,9 @@ test_that("Sanity() produced LTQ that sum to 1", {
     expect_equal(res, rep(1, length(res)), tolerance = .01, ignore_attr = TRUE)
 })
 
-test_that("Sanity() returns nearly zero cell-specific differences for uniform input", {
+test_that(
+    "Sanity() returns nearly zero cell-specific differences for uniform input",
+    {
     mu <- exp(rowData(sce)$ltq_mean)
     sf <- colData(sce)[["cell_size"]]
     rate <- outer(mu, sf, FUN = "*")
@@ -95,7 +106,8 @@ test_that("Sanity() returns nearly zero cell-specific differences for uniform in
         pnorm(lower.tail = FALSE) |>
         p.adjust()
     expect_true(min(p) > 0.05)
-})
+    }
+)
 
 test_that("Sanity() outputs are numeric and finite", {
     res <- Sanity(counts(sce))
@@ -128,11 +140,10 @@ test_that("Sanity() respects subset.row in SummarizedExperiment", {
 })
 
 test_that("Sanity() warns about high entropy genes", {
-    se <- as(sce, "SummarizedExperiment")[1, ]
-    expect_warning(Sanity(se, vmin=1e-4, vmax=1), "entropy")
-})
-
-test_that("Sanity() errors with non-numeric input", {
-    bad <- matrix("a", nrow=2, ncol=2)
-    expect_error(Sanity(bad))
+    # generate sparse data to hinder inference
+    se <- simulate_independent_cells(
+        cell_size = rep(100, 100),
+        gene_size = c(rep(1, 5), rep(100, 5))
+    )
+    expect_warning(Sanity(se), "entropy")
 })

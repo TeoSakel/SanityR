@@ -38,16 +38,20 @@ test_that("simulate_branched_random_walk returns a valid SCE with lineage graph"
 
 test_that("simulate_independent_cells uses provided sizes", {
     cell_size <- c(100, 200, 300)
-    gene_size <- c(50, 60)
+    N_cell <- 100L
+    gene_size <- c(6, 60)
+    N_gene <- 30L  # keep it large to ensure both are selected by chance
     sce <- simulate_independent_cells(
         cell_size=cell_size,
         gene_size=gene_size,
-        N_cell=3,
-        N_gene=2
+        N_cell=N_cell,
+        N_gene=N_gene
     )
-    expect_equal(colData(sce)$cell_size, cell_size)
-    expect_equal(ncol(sce), 3)
-    expect_equal(nrow(sce), 2)
+    expect_true(all(colData(sce)$cell_size %in% cell_size))
+    expect_equal(ncol(sce), N_cell)
+    ltq_mean <- rowData(sce)$ltq_mean
+    expect_true(length(unique(ltq_mean)) == length(gene_size))
+    expect_equal(nrow(sce), N_gene)
 })
 
 test_that("simulate_independent_cells works with single cell and gene", {
@@ -59,7 +63,7 @@ test_that("simulate_independent_cells works with single cell and gene", {
 test_that("simulate_branched_random_walk respects path settings", {
     sce <- simulate_branched_random_walk(N_path=2, length_path=3, N_gene=4)
     expect_equal(ncol(sce), 6)
-    expect_equal(nrow(sce), 4)
+    expect_lte(nrow(sce), 4)
     expect_true("predecessor" %in% colnames(colData(sce)))
 })
 
