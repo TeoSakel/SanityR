@@ -10,10 +10,11 @@
 #' @param vmin The minimum value for the gene-level variance (must be > 0).
 #' @param vmax The maximum value for the gene-level variance.
 #' @param nbin Number of variance bins to use.
-#' @param a,b Gamma prior parameter (see Details).
+#' @param a,b Gamma prior parameters (see Details).
 #' @param assay.type A string specifying the assay of `x` containing the counts.
 #' @param size.factors A numeric vector of cell-specific size factors.
-#'   Alternatively `NULL`, in which case the size factors are computed from `x`.
+#'   Values are internally scaled to have mean equal to 1, so only relative differences matter.
+#'   Defaults to `sizeFactors(x)` if `x` is a `SingleCellExperiment`, or `colSums(x)` if `x` is a matrix.
 #' @param name Name of assay to store the normalized values.
 #' @param subset.row A vector specifying the subset of rows of `x` to process.
 #' @param BPPARAM A \linkS4class{BiocParallelParam} object specifying whether
@@ -38,7 +39,8 @@
 #'                \eqn{\delta_{gc}}.}
 #'   \item{var_delta}{Posterior variance of the cell-level fold-changes
 #'                    \eqn{\epsilon_{gc}^2}.}
-#'   \item{lik}{Normalized likelihood across the evaluated variance grid
+#'   \item{cell_size}{Vector of cell-specific size factors used in the model.}
+#'   \item{likelihood}{Normalized likelihood across the evaluated variance grid
 #'              \eqn{P\left(v_g \mid n_g \right)} for diagnostics.}
 #' }
 #'
@@ -66,8 +68,20 @@
 #' and cell-specific log-fold changes. The *standard deviation* of log-counts is
 #' computed by summing the variances of the components.
 #'
-#' If no `size.factors` are provided, they are assumed all equal so that all
-#' cells have the same library size `mean(colSums(x))`.
+#' ## `size.factors` behavior
+#'
+#' The `size.factors` provided are used to compute the `cell_size` by first
+#' normalizing them to have a mean of 1 and then scaling them by the average
+#' library size (mean of column sums of `x`). The `cell_size` parameter quantifies
+#' the expected library size (total number of UMIs) in each cell. The default
+#' value for matrix method is consistent with the original publication and
+#' treats any variation in library size as real so counts are partially
+#' explained by them. However, in the case of `x` being a `SingleCellExperiment`,
+#' we defer to `sizeFactors(x)`, which allows users to apply their own
+#' normalization strategy consistenly across their analysis. In this case if
+#' `sizeFactors(x)` is missing (`NULL`), we will assume all cells have the same
+#' library size treating any variation as noise which will increase the
+#' uncertainty in the estimates of gene expression (`delta`).
 #'
 #' ## Gamma Prior:
 #'
@@ -118,7 +132,7 @@ setGeneric("Sanity", function(x, ...) standardGeneric("Sanity"))
 #' @export
 #' @rdname Sanity
 #' @importFrom BiocParallel bpparam bplapply
-setMethod("Sanity", "ANY", function(x, size.factors=NULL,
+setMethod("Sanity", "ANY", function(x, size.factors=colSums(x),
                                     vmin=0.001, vmax=50, nbin=160L,
                                     a=1, b=0, BPPARAM=bpparam()) {
     stopifnot("Minimum variance must be positive"=vmin > 0)
@@ -128,12 +142,18 @@ setMethod("Sanity", "ANY", function(x, size.factors=NULL,
     # Extract matrix stats
     C <- ncol(x)
     G <- nrow(x)
-    mean_cell_size <- mean(colSums(x))
 
-    # Compute cell_sizes: N_c
-    if (is.null(size.factors))
+    # compute `cell_size` from `size.factors` and the average library size
+    if (is.null(size.factors)) {
+        # If no size factors are provided, assume all cells have the same size
+        # This branch is probably called when x is `SingleCellExperiment` and `sizeFactors(x)` is NULL`
         size.factors <- rep(1, C)
-    cell_size <- mean_cell_size * size.factors
+    } else {
+        stopifnot("Length of size factors must match number of cells"=length(size.factors) == C)
+        stopifnot("All size.factors must be positive" = all(size.factors > 0))
+        size.factors <- size.factors / mean(size.factors)
+    }
+    cell_size <- mean(colSums(x)) * size.factors
 
     # Parallel processing over genes
     results <- bplapply(
@@ -157,6 +177,7 @@ setMethod("Sanity", "ANY", function(x, size.factors=NULL,
         # Cell-specific: Matrix(G, C)
         delta=t(vapply(results, "[[", rep(0, C), "delta")),
         var_delta=t(vapply(results, "[[", rep(0, C), "var_delta")),
+        cell_size=cell_size,  # Vector(C)
         # Variance Likelihood: Matrix(G, nbin)
         likelihood=t(vapply(results, "[[", rep(0, nbin), "lik"))
     )
@@ -181,9 +202,9 @@ setMethod(
     res <- callNextMethod(x=assay(x, assay.type), ...)
 
     # Check for genes with bad fit
-    res[["entropy"]] <- rowSums(res[["likelihood"]] * log2(res[["likelihood"]]),
-                                na.rm=TRUE)
-    res[["entropy"]] <- -res[["entropy"]] / log2(ncol(res[["likelihood"]]))
+    lik <- pmax(res[["likelihood"]], .Machine$double.eps)  # Avoid log(0)
+    res[["entropy"]] <- rowSums(lik * log2(lik), na.rm=TRUE)
+    res[["entropy"]] <- -res[["entropy"]] / log2(ncol(lik))
     problematic <- sum(res[["entropy"]] > .9)
     if (problematic > 0) {
         msg_fmt <- paste0(

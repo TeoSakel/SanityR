@@ -11,7 +11,7 @@ Sanity(x, ...)
 
 \S4method{Sanity}{ANY}(
   x,
-  size.factors = NULL,
+  size.factors = colSums(x),
   vmin = 0.001,
   vmax = 50,
   nbin = 160L,
@@ -25,21 +25,22 @@ Sanity(x, ...)
 \S4method{Sanity}{SingleCellExperiment}(x, size.factors = sizeFactors(x), ...)
 }
 \arguments{
-\item{x}{A numeric matrix of counts where features are rows and columns are cells.
+\item{x}{A numeric matrix of counts (rows = features, columns = cells).
 
 Alternatively, a \linkS4class{SummarizedExperiment} or a
 \linkS4class{SingleCellExperiment} containing such counts.}
 
 \item{...}{For the generic, further arguments to pass to each method.
 
-For the \code{SummarizedExperiment} method, further arguments to pass to the \code{ANY}
-method.
+For the \code{SummarizedExperiment} method, further arguments to pass to the
+\code{ANY} method.
 
 For the \code{SingleCellExperiment} method, further arguments to pass to the
 \code{SummarizedExperiment} method.}
 
 \item{size.factors}{A numeric vector of cell-specific size factors.
-Alternatively \code{NULL}, in which case the size factors are computed from \code{x}.}
+Values are internally scaled to have mean equal to 1, so only relative differences matter.
+Defaults to \code{sizeFactors(x)} if \code{x} is a \code{SingleCellExperiment}, or \code{colSums(x)} if \code{x} is a matrix.}
 
 \item{vmin}{The minimum value for the gene-level variance (must be > 0).}
 
@@ -47,57 +48,77 @@ Alternatively \code{NULL}, in which case the size factors are computed from \cod
 
 \item{nbin}{Number of variance bins to use.}
 
-\item{a, b}{Gamma prior parameter (see Details).}
+\item{a, b}{Gamma prior parameters (see Details).}
 
 \item{BPPARAM}{A \linkS4class{BiocParallelParam} object specifying whether
 the calculations should be parallelized.}
 
-\item{assay.type}{A string specifying the assay of \code{x} containing the count matrix.}
+\item{assay.type}{A string specifying the assay of \code{x} containing the counts.}
 
-\item{name}{String containing an assay name for storing the output normalized values.}
+\item{name}{Name of assay to store the normalized values.}
 
 \item{subset.row}{A vector specifying the subset of rows of \code{x} to process.}
 }
 \value{
-For \code{matrix}-like object it returns a named list with the following elements
-(symbols as defined in the Supplementary Text of the publication):
+For \code{matrix}-like object it returns a named list with the following
+elements (symbols as defined in the Supplementary Text of the publication):
 \describe{
 \item{mu}{Posterior mean of log expression across cells \eqn{\mu_g}.}
-\item{var_mu}{Posterior variance of the mean expression \eqn{\left(\delta \mu_g\right)^2}.}
-\item{var}{Posterior variance of expression across cells \eqn{\langle v_g \rangle}.}
-\item{delta}{Vector of log fold-changes for each cell relative to \eqn{\delta_{gc}}.}
-\item{var_delta}{Posterior variance of the cell-level fold-changes \eqn{\epsilon_{gc}^2}.}
-\item{lik}{Normalized likelihood across the evaluated variance grid \eqn{P\left(v_g \mid n_g \right)} for diagnostics.}
+\item{var_mu}{Posterior variance of the mean expression
+\eqn{\left(\delta \mu_g\right)^2}.}
+\item{var}{Posterior variance of expression across cells
+\eqn{\langle v_g \rangle}.}
+\item{delta}{Vector of log fold-changes for each cell relative to
+\eqn{\delta_{gc}}.}
+\item{var_delta}{Posterior variance of the cell-level fold-changes
+\eqn{\epsilon_{gc}^2}.}
+\item{cell_size}{Vector of cell-specific size factors used in the model.}
+\item{likelihood}{Normalized likelihood across the evaluated variance grid
+\eqn{P\left(v_g \mid n_g \right)} for diagnostics.}
 }
 
-If called on a \linkS4class{SingleCellExperiment} or \linkS4class{SummarizedExperiment}
-it appends the following columns to the \code{rowData} slot:
+If called on a \linkS4class{SingleCellExperiment} or
+\linkS4class{SummarizedExperiment} it appends the following columns to the
+\code{rowData} slot:
 \describe{
 \item{sanity_log_activity_mean}{\code{mu}}
 \item{sanity_log_activity_mean_sd}{\code{sqrt(var_mu)}}
 \item{sanity_activity_sd}{\code{sqrt(var)}}
 }
-and appends the following assays (assuming \code{name = "logcounts"}):
+and appends the following assays (assuming \code{name="logcounts"}):
 \describe{
 \item{assay(x, "logcounts")}{\code{mu + delta}}
 \item{assay(x, "logcounts_sd")}{\code{sqrt(var_mu + var_delta)}}
 }
 }
 \description{
-This function provides a user-friendly interface to the Sanity model for
-gene expression analysis.
+This function provides a user-friendly interface to the Sanity model for gene
+expression analysis.
 }
 \details{
-The method models gene activity using a Bayesian framework, assuming
-a Gamma prior on expression and integrating over cell-level variability.
-It returns posterior estimates for mean expression (\code{mu}), cell-specific
-deviations (\code{delta}), and their variances, as well as expression variance
-(\code{var}). \emph{Expected} log-normalized counts are computed by combining mean
-expression and cell-specific log-fold changes. The \emph{standard deviation} of
-log-counts is computed by summing the variances of the components.
+The method models gene activity using a Bayesian framework, assuming a Gamma
+prior on expression and integrating over cell-level variability. It returns
+posterior estimates for mean expression (\code{mu}), cell-specific deviations
+(\code{delta}), and their variances, as well as expression variance (\code{var}).
+\emph{Expected} log-normalized counts are computed by combining mean expression
+and cell-specific log-fold changes. The \emph{standard deviation} of log-counts is
+computed by summing the variances of the components.
+\subsection{\code{size.factors} behavior}{
 
-If no \code{size.factors} are provided, they are assumed all equal so that all
-cells have the same library size \code{mean(colSums(x))}.
+The \code{size.factors} provided are used to compute the \code{cell_size} by first
+normalizing them to have a mean of 1 and then scaling them by the average
+library size (mean of column sums of \code{x}). The \code{cell_size} parameter quantifies
+the expected library size (total number of UMIs) in each cell. The default
+value for matrix method is consistent with the original publication and
+treats any variation in library size as real so counts are partially
+explained by them. However, in the case of \code{x} being a \code{SingleCellExperiment},
+we defer to \code{sizeFactors(x)}, which allows users to apply their own
+normalization strategy consistenly across their analysis. In this case if
+\code{sizeFactors(x)} is missing (\code{NULL}), we will assume all cells have the same
+library size treating any variation as noise which will increase the
+uncertainty in the estimates of gene expression (\code{delta}).
+}
+
 \subsection{Gamma Prior:}{
 
 The model adopts a Bayesian framework by placing a Gamma prior \code{Gamma(a, b)}
@@ -114,14 +135,14 @@ expression — i.e., it regularizes the total number of UMIs that differ from
 the expected value.
 }
 
-Setting \code{a = 1} and \code{b = 0} corresponds to an uninformative (uniform) prior,
+Setting \code{a=1} and \code{b=0} corresponds to an uninformative (uniform) prior,
 which was used in the original Sanity model publication.
 }
 }
 \examples{
 library(SingleCellExperiment)
 
-sce <- simulate_independent_cells(N_cell = 500, N_gene = 100)
+sce <- simulate_independent_cells(N_cell=500, N_gene=100)
 
 # Standard Sanity normalization
 sce_norm <- Sanity(sce)
@@ -135,7 +156,8 @@ logcounts(sce_norm2)[1:5,1:5]
 
 }
 \references{
-Breda, J., Zavolan, M., & van Nimwegen, E. (2021).
-Bayesian inference of gene expression states from single-cell RNA-seq data.
-\emph{Nature Biotechnology}, 39, 1008–1016. \url{https://doi.org/10.1038/s41587-021-00875-x}
+Breda, J., Zavolan, M., & van Nimwegen, E. (2021). Bayesian
+inference of gene expression states from single-cell RNA-seq data.
+\emph{Nature Biotechnology}, 39, 1008–1016.
+\url{https://doi.org/10.1038/s41587-021-00875-x}
 }
