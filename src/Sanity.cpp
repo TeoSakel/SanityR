@@ -43,7 +43,8 @@ List get_gene_expression_level(NumericVector counts, NumericVector cell_size,
     NumericVector var_g(numbin); // gene variance
 
     // Temporary variables
-    std::vector<double> mu_v(numbin);  // mean gene expression as function of variance
+    double q_exp = 0.0;               // expected q_g value to determine mean expression
+    std::vector<double> q_v(numbin);  // fitted q value for each bin
     std::vector<double> f(C);
     std::vector<std::vector<double>> delta_v(numbin, std::vector<double>(C));  // logFC as function of variance
     std::vector<std::vector<double>> var_delta_v(numbin, std::vector<double>(C));
@@ -64,11 +65,11 @@ List get_gene_expression_level(NumericVector counts, NumericVector cell_size,
         // fit q(g) = mean number of reads deviating from mean (log-scale)
         // and f(g,c) = ratio of deviating reads attributes to cell c
         // using eq 27
-        q = fitfrac(f.data(), q, counts.begin(), C, gene_size, var_g[k], cell_size.begin(), b);
+        q[k] = fitfrac(f.data(), q, counts.begin(), C, gene_size, var_g[k], cell_size.begin(), b);
 
         /*** Compute optimal delta given v_g ***/
         for (int c = 0; c < C; ++c) {
-            delta_v[k][c] = log(f[c]) - log(cell_size[c]) + q; // eq 28 in supp
+            delta_v[k][c] = v * (counts[c] - f[c] * gene_size); // eq 28 in supp rearranged to avoid logs
         }
 
         /*** Laplace approx of likelihood at optimal delta ***/
@@ -85,7 +86,7 @@ List get_gene_expression_level(NumericVector counts, NumericVector cell_size,
             L += counts[c] * delta_v[k][c];  // 3rd term
         }
         L -= 0.5 * sum_delta_v2 * inv_v;  // 2nd term
-        L -= gene_size * q;      // 4th term
+        L -= gene_size * q[k];      // 4th term
 
         // Equation 33 of Supp: Compute log-determinant of the Hessian at L*
         // Notes:
@@ -129,7 +130,7 @@ List get_gene_expression_level(NumericVector counts, NumericVector cell_size,
         }
 
         /*** Compute mean expression given v_g ***/
-        mu_v[k] = psi::Psi_0(gene_size) - q; // Equation 45 in Supplementary
+        //mu_v[k] = psi::Psi_0(gene_size) - q; // Equation 45 in Supplementary
 
     }
 
@@ -146,14 +147,16 @@ List get_gene_expression_level(NumericVector counts, NumericVector cell_size,
 
     // Compute average gene expression (mu) and variance
     for (int k = 0; k < numbin; ++k) {
-        mu += lik[k] * mu_v[k];
+        q_exp += lik[k] * q_v[k];
+        //mu += lik[k] * mu_v[k];
         var += lik[k] * var_g[k];
     }
+    mu = psi::Psi_0(gene_size) + q_exp;
 
     // Compute mu variance
     var_mu = psi::Psi_1(gene_size);
     for (int k = 0; k < numbin; ++k) {
-        double dev_mu = mu_v[k] - mu;
+        double dev_mu = q_v[k] - q_exp;
         var_mu += lik[k] * dev_mu * dev_mu;
     }
 
