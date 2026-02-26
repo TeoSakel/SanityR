@@ -1,3 +1,14 @@
+#' @importFrom SummarizedExperiment assay rowData
+.extract_delta_epsilon <- function(x, assay, assay.sd, gene_mu, mu_sd) {
+    delta <- assay(x, assay) - rowData(x)[[gene_mu]]
+    epsilon <- assay(x, assay.sd)^2 - rowData(x)[[mu_sd]]^2
+    if (any(epsilon < 0)) {
+        warning("Setting negative activity variances to 0.")
+        epsilon <- pmax(epsilon, 0)
+    }
+    list(delta=delta, epsilon=epsilon)
+}
+
 #' Calculate the Signal-to-Noise Ratio (SNR) for gene filtering
 #'
 #' Computes the signal-to-noise ratio (SNR) for each gene as the ratio of the
@@ -53,7 +64,6 @@
 #'
 #' @export
 #' @importFrom MatrixGenerics rowVars rowMeans2
-#' @importFrom SummarizedExperiment assay rowData
 #' @importFrom scuttle .subset2index
 calculateSNR <- function(
         x,
@@ -68,14 +78,8 @@ calculateSNR <- function(
         x <- x[subset.row, ]
     }
 
-    delta <- assay(x, assay) - rowData(x)[[gene_mu]]
-    epsilon <- assay(x, assay.sd)^2 - rowData(x)[[mu_sd]]^2
-    if (any(epsilon < 0)) {
-        warning("Setting negative activity variances to 0.")
-        epsilon <- pmax(epsilon, 0)
-    }
-
-    snr <- rowVars(delta) / rowMeans2(epsilon)
+    de <- .extract_delta_epsilon(x, assay, assay.sd, gene_mu, mu_sd)
+    snr <- rowVars(de[["delta"]]) / rowMeans2(de[["epsilon"]])
     names(snr) <- rownames(x)
     return(snr)
 }
@@ -169,7 +173,6 @@ calculateSNR <- function(
 #'
 #' @export
 #' @importFrom scuttle .subset2index
-#' @importFrom SummarizedExperiment assay rowData
 calculateSanityDistance <- function(
         x,
         assay="logcounts",
@@ -185,17 +188,12 @@ calculateSanityDistance <- function(
         x <- x[subset.row, ]
     }
 
-    delta <- assay(x, assay) - rowData(x)[[gene_mu]]
-    epsilon <- assay(x, assay.sd)^2 - rowData(x)[[mu_sd]]^2
-    if (any(epsilon < 0)) {
-        warning("Setting negative activity variances to 0.")
-        epsilon <- pmax(epsilon, 0)
-    }
+    de <- .extract_delta_epsilon(x, assay, assay.sd, gene_mu, mu_sd)
     gene_var <- rowData(x)[[gene_sd]]^2
 
     dmat <- .calculate_sanity_distance(
-        delta,
-        epsilon,
+        de[["delta"]],
+        de[["epsilon"]],
         gene_var,
         snr_cutoff,
         nbin,
