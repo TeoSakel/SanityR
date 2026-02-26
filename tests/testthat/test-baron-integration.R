@@ -2,7 +2,7 @@
 ##
 ## This test runs SanityR on the Baron et al. (2016) pancreas UMI count matrix
 ## (521 subsampled genes x 1,937 cells) and compares the results to the
-## reference output from the Breda et al. (2021) paper z-score tests.
+## reference output from the Breda et al. (2021) paper using z-score tests.
 
 # Load reference data --------------------------------------------------------
 
