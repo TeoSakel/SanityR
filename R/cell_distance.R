@@ -1,3 +1,89 @@
+#' @importFrom SummarizedExperiment assay rowData
+.extract_delta_epsilon <- function(x, assay, assay.sd, gene_mu, mu_sd) {
+    delta <- assay(x, assay) - rowData(x)[[gene_mu]]
+    epsilon <- assay(x, assay.sd)^2 - rowData(x)[[mu_sd]]^2
+    if (any(epsilon < 0)) {
+        warning("Setting negative activity variances to 0.")
+        epsilon <- pmax(epsilon, 0)
+    }
+    list(delta=delta, epsilon=epsilon)
+}
+
+#' Calculate the Signal-to-Noise Ratio (SNR) for gene filtering
+#'
+#' Computes the signal-to-noise ratio (SNR) for each gene as the ratio of the
+#' variance of log-normalized counts across cells to the mean measurement noise
+#' variance. This can be used to filter highly variable genes before downstream
+#' analysis.
+#'
+#' @param x A \linkS4class{SingleCellExperiment} or
+#'          \linkS4class{SummarizedExperiment} object with Sanity results.
+#' @param assay The name of the assay containing the log-normalized counts
+#'   matrix.
+#' @param assay.sd The name of the assay containing the standard deviation of
+#'   the log-normalized counts.
+#' @param gene_mu The name of the column in `rowData(x)` containing the mean
+#'   log activity of the genes.
+#' @param mu_sd The name of the column in `rowData(x)` containing the standard
+#'   deviation of the mean log activity of the genes.
+#' @param subset.row A vector of row indices or logical vector indicating which
+#'   rows to use.
+#'
+#' @return A named numeric vector of SNR values, one per gene (or per row in
+#'   `subset.row`).
+#'
+#' @details
+#'
+#' The SNR for gene \eqn{g} is defined as:
+#' \deqn{SNR_g = \frac{Var_c(\delta_{gc})}{Mean_c(\epsilon_{gc}^2)}}
+#'
+#' where \eqn{\delta_{gc}} are the cell-specific log fold-changes and
+#' \eqn{\epsilon_{gc}^2} is the cell-specific measurement noise variance.
+#' Both are derived from the Sanity output assays.
+#'
+#' A high SNR indicates that a gene's expression varies substantially across
+#' cells relative to measurement noise, making it informative for downstream
+#' analyses. The same SNR is used internally by [calculateSanityDistance()] to
+#' exclude uninformative genes via `snr_cutoff`.
+#'
+#' Note that because both expression estimates and error bars vary across cells,
+#' an SNR-based filter may not be optimal in all situations. For example, a
+#' marker gene expressed only in a rare cell type may have low overall SNR
+#' despite being highly informative.
+#'
+#' @examples
+#' sce <- simulate_branched_random_walk(N_gene=500, N_path=10, length_path=10)
+#' sce <- Sanity(sce)
+#' snr <- calculateSNR(sce)
+#' hist(log10(snr), breaks=30, main="Gene SNR distribution")
+#'
+#' # Filter genes with SNR > 1 before computing distances
+#' d <- calculateSanityDistance(sce, subset.row=which(snr > 1))
+#'
+#' @seealso [calculateSanityDistance()] which uses SNR internally to filter genes.
+#'
+#' @export
+#' @importFrom MatrixGenerics rowVars rowMeans2
+#' @importFrom scuttle .subset2index
+calculateSNR <- function(
+        x,
+        assay="logcounts",
+        assay.sd="logcounts_sd",
+        gene_mu="sanity_log_activity_mean",
+        mu_sd="sanity_log_activity_mean_sd",
+        subset.row=NULL
+) {
+    if (!is.null(subset.row)) {
+        subset.row <- .subset2index(subset.row, x, byrow=TRUE)
+        x <- x[subset.row, ]
+    }
+
+    de <- .extract_delta_epsilon(x, assay, assay.sd, gene_mu, mu_sd)
+    snr <- rowVars(de[["delta"]]) / rowMeans2(de[["epsilon"]])
+    names(snr) <- rownames(x)
+    return(snr)
+}
+
 #' Calculate the Sanity distance between samples
 #'
 #' Calculates the expected squared Euclidean distance between two cells using a
@@ -87,7 +173,6 @@
 #'
 #' @export
 #' @importFrom scuttle .subset2index
-#' @importFrom SummarizedExperiment assay rowData
 calculateSanityDistance <- function(
         x,
         assay="logcounts",
@@ -103,17 +188,12 @@ calculateSanityDistance <- function(
         x <- x[subset.row, ]
     }
 
-    delta <- assay(x, assay) - rowData(x)[[gene_mu]]
-    epsilon <- assay(x, assay.sd)^2 - rowData(x)[[mu_sd]]^2
-    if (any(epsilon < 0)) {
-        warning("Setting negative activity variances to 0.")
-        epsilon <- pmax(epsilon, 0)
-    }
+    de <- .extract_delta_epsilon(x, assay, assay.sd, gene_mu, mu_sd)
     gene_var <- rowData(x)[[gene_sd]]^2
 
     dmat <- .calculate_sanity_distance(
-        delta,
-        epsilon,
+        de[["delta"]],
+        de[["epsilon"]],
         gene_var,
         snr_cutoff,
         nbin,
