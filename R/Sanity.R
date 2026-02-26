@@ -15,6 +15,11 @@
 #' @param size.factors A numeric vector of cell-specific size factors.
 #'   Values are internally scaled to have mean equal to 1, so only relative differences matter.
 #'   Defaults to `sizeFactors(x)` if `x` is a `SingleCellExperiment`, or `colSums(x)` if `x` is a matrix.
+#'   Ignored when `cell_size` is provided.
+#' @param cell_size A numeric vector of absolute cell sizes (expected total UMI
+#'   count per cell). When supplied it is used directly, bypassing the
+#'   `size.factors` argument entirely. Useful when the input matrix is a subset
+#'   of genes and the full library sizes must be preserved.
 #' @param name Name of assay to store the normalized values.
 #' @param subset.row A vector specifying the subset of rows of `x` to process.
 #' @param BPPARAM A \linkS4class{BiocParallelParam} object specifying whether
@@ -133,6 +138,7 @@ setGeneric("Sanity", function(x, ...) standardGeneric("Sanity"))
 #' @rdname Sanity
 #' @importFrom BiocParallel bpparam bplapply
 setMethod("Sanity", "ANY", function(x, size.factors=colSums(x),
+                                    cell_size=NULL,
                                     vmin=0.001, vmax=50, nbin=160L,
                                     a=1, b=0, BPPARAM=bpparam()) {
     stopifnot("Minimum variance must be positive"=vmin > 0)
@@ -143,17 +149,22 @@ setMethod("Sanity", "ANY", function(x, size.factors=colSums(x),
     C <- ncol(x)
     G <- nrow(x)
 
-    # compute `cell_size` from `size.factors` and the average library size
-    if (is.null(size.factors)) {
+    # compute `cell_size` from `size.factors` and the average library size,
+    # unless `cell_size` is supplied directly (takes precedence)
+    if (!is.null(cell_size)) {
+        stopifnot("Length of cell_size must match number of cells"=length(cell_size) == C)
+        stopifnot("All cell_size values must be positive"=all(cell_size > 0))
+    } else if (is.null(size.factors)) {
         # If no size factors are provided, assume all cells have the same size
         # This branch is probably called when x is `SingleCellExperiment` and `sizeFactors(x)` is NULL`
         size.factors <- rep(1, C)
+        cell_size <- mean(colSums(x)) * size.factors
     } else {
         stopifnot("Length of size factors must match number of cells"=length(size.factors) == C)
         stopifnot("All size.factors must be positive" = all(size.factors > 0))
         size.factors <- size.factors / mean(size.factors)
+        cell_size <- mean(colSums(x)) * size.factors
     }
-    cell_size <- mean(colSums(x)) * size.factors
 
     # Parallel processing over genes
     results <- bplapply(

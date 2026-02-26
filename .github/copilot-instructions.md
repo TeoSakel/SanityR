@@ -10,6 +10,8 @@ uncertainty-aware cell distance calculations.
 Reference: Breda et al. (2021), *Nature Biotechnology*,
 <https://doi.org/10.1038/s41587-021-00875-x>
 
+Open access version: https://www.biorxiv.org/content/10.1101/2019.12.28.889956v1.full.pdf
+
 ---
 
 ## Repository Structure
@@ -70,8 +72,9 @@ Follow the [Bioconductor coding style guide](https://contributions.bioconductor.
 - After editing C++ files run `Rcpp::compileAttributes()` to regenerate
   `R/RcppExports.R` and `src/RcppExports.cpp`.
 
-### Parallelisation
+### Parallelization
 
+- Prefer **vectorized** operations over loops.
 - Use `BiocParallel::bplapply()` (not `parallel::mclapply`).
 - Accept a `BPPARAM` argument in any function that supports parallelisation and
   default to `BiocParallel::bpparam()`.
@@ -106,6 +109,7 @@ Follow the [Bioconductor coding style guide](https://contributions.bioconductor.
 ## Bioconductor Compliance
 
 - Follow the [Bioconductor package guidelines](https://contributions.bioconductor.org/).
+- Working within the [Orchestrating Single-Cell Analysis with Bioconductor](https://bioconductor.org/books/release/OSCA/) framework.
 - `biocViews` tags: `Software`, `GeneExpression`, `SingleCell`,
   `Normalization`, `Bayesian`.
 - Version scheme: `x.y.z` where `y` is even for release, odd for devel.
