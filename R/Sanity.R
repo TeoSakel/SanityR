@@ -202,9 +202,9 @@ setMethod(
     res <- callNextMethod(x=assay(x, assay.type), ...)
 
     # Check for genes with bad fit
-    lik <- pmax(res[["likelihood"]], .Machine$double.eps)  # Avoid log(0)
-    res[["entropy"]] <- rowSums(lik * log2(lik), na.rm=TRUE)
-    res[["entropy"]] <- -res[["entropy"]] / log2(ncol(lik))
+    # check also: https://github.com/jmbreda/Sanity/issues/19#issuecomment-1217563095
+    lik <- res[["likelihood"]]
+    res[["entropy"]] <- -rowSums(lik * log2(lik), na.rm=TRUE) / log2(ncol(lik))
     problematic <- sum(res[["entropy"]] > .9)
     if (problematic > 0) {
         msg_fmt <- paste0(
