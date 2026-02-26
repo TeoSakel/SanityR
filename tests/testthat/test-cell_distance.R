@@ -6,6 +6,50 @@ set.seed(2025)
 sce <- simulate_branched_random_walk(N_gene=12, N_path=3, length_path=5)
 sce <- suppressWarnings(Sanity(sce))
 
+# calculateSNR tests --------------------------------------------------------
+
+test_that("calculateSNR returns a named numeric vector of correct length", {
+    snr <- calculateSNR(sce)
+    expect_true(is.numeric(snr))
+    expect_equal(length(snr), nrow(sce))
+    expect_equal(names(snr), rownames(sce))
+})
+
+test_that("calculateSNR values are non-negative", {
+    snr <- calculateSNR(sce)
+    expect_true(all(snr >= 0))
+})
+
+test_that("calculateSNR respects subset.row", {
+    snr_all <- calculateSNR(sce)
+    snr_sub <- calculateSNR(sce, subset.row=1:6)
+    expect_equal(length(snr_sub), 6L)
+    expect_equal(snr_sub, snr_all[1:6])
+})
+
+test_that("calculateSNR warns on negative variances", {
+    obj <- sce
+    assay(obj, "logcounts_sd")[,] <- 0
+    snr <- expect_warning(calculateSNR(obj), "negative activity variances")
+    expect_true(all(is.finite(snr)))
+    expect_true(all(snr >= 0))
+})
+
+test_that("calculateSNR SNR matches the filter used in calculateSanityDistance", {
+    snr <- calculateSNR(sce)
+    snr_cutoff <- 1
+    keep <- which(snr >= snr_cutoff)
+
+    # Distance using subset.row based on SNR should match using snr_cutoff
+    d_snr <- calculateSanityDistance(sce, snr_cutoff=snr_cutoff, nbin=10L,
+                                     BPPARAM=SerialParam())
+    d_sub <- calculateSanityDistance(sce, snr_cutoff=0, subset.row=keep,
+                                     nbin=10L, BPPARAM=SerialParam())
+    expect_equal(as.numeric(d_snr), as.numeric(d_sub))
+})
+
+# calculateSanityDistance tests ---------------------------------------------
+
 test_that("calculateSanityDistance returns a valid dist object", {
     dist_obj <- calculateSanityDistance(
         sce,
